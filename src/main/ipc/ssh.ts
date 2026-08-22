@@ -36,6 +36,7 @@ import { forceStopRelayForTarget } from '../ssh/ssh-relay-reset'
 import { isSshPtyNotFoundError } from '../providers/ssh-pty-errors'
 import { toAppSshPtyId, toRelaySshPtyId } from '../providers/ssh-pty-id'
 import { registerSshBrowseHandler } from './ssh-browse'
+import { resolveResumeReconnectAction } from './ssh-resume-reconnect-policy'
 import {
   getConnectionIdsForWorktree,
   enrichSshDetectedPorts,
@@ -616,9 +617,10 @@ function registerAdvertisedUrlRefresh(getMainWindow: () => BrowserWindow | null)
   })
 }
 
-// Why: macOS can resume before the network is back, so a failed first probe gets one retry before the link is declared dead (#7773).
-const RESUME_PROBE_TIMEOUT_MS = 5_000
-const RESUME_PROBE_ATTEMPTS = 2
+// Why: a live relay answers a mux ping in ≪1×RTT, so 1.5s is generous on any
+// usable link; a false negative only costs a lossless grace-0 reconnect (#7773).
+const RESUME_PROBE_TIMEOUT_MS = 1_500
+const RESUME_PROBE_ATTEMPTS = 1
 
 async function isRelayLinkAliveAfterResume(session: SshRelaySession): Promise<boolean> {
   const mux = session.getMux()
@@ -635,12 +637,18 @@ async function isRelayLinkAliveAfterResume(session: SshRelaySession): Promise<bo
 
 function registerPowerMonitorReconnect(): void {
   powerMonitorUnsubscribe?.()
+  let hostSuspendedAt: number | null = null
   const onSuspend = (): void => {
+    hostSuspendedAt = Date.now()
     for (const session of activeSessions.values()) {
       session.prepareForHostSleep()
     }
   }
   const onResume = (): void => {
+    const resumeAction = resolveResumeReconnectAction(
+      hostSuspendedAt == null ? null : Date.now() - hostSuspendedAt
+    )
+    hostSuspendedAt = null
     for (const [targetId, session] of activeSessions) {
       const manager = connectionManager
       const conn = manager?.getConnection(targetId)
@@ -648,11 +656,13 @@ function registerPowerMonitorReconnect(): void {
         continue
       }
       void (async () => {
-        // Why: unconditional reconnect on wake tore down live sessions and flashed the overlay (#7773); only reconnect if the relay link actually died during sleep.
-        if (await isRelayLinkAliveAfterResume(session)) {
+        // Why: a long sleep presumes the link dead (grace-0 kept the remote
+        // relay alive, so reconnect is lossless); a short suspend probes
+        // first — unconditional teardown tore down live sessions (#7773).
+        if (resumeAction === 'probe' && (await isRelayLinkAliveAfterResume(session))) {
           return
         }
-        // Why: the probe can take ~10s; bail if the session/connection was replaced or torn down meanwhile, else we'd resurrect it.
+        // Why: the probe can take seconds; bail if the session/connection was replaced or torn down meanwhile, else we'd resurrect it.
         if (activeSessions.get(targetId) !== session || manager?.getConnection(targetId) !== conn) {
           return
         }

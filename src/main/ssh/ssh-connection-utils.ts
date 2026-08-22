@@ -189,7 +189,12 @@ export function buildConnectConfig(
     port: effectivePort,
     username: effectiveUser,
     readyTimeout: CONNECT_TIMEOUT_MS,
-    keepaliveInterval: 15_000
+    keepaliveInterval: 15_000,
+    // Why: explicit death window — ssh2's default countMax (3, ~45s) leaves a
+    // silently dead link (e.g. a missed/delayed resume event) undetected far
+    // longer than the app-level mux timeout; the relay survives teardown, so
+    // an occasional over-eager kill is a lossless reconnect.
+    keepaliveCountMax: 2
   }
 
   const shouldIncludeAgent = options.includeAgent ?? true
