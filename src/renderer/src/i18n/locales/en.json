@@ -7181,7 +7181,8 @@
           "pairingCodeReady": "Pairing code ready",
           "copyPairingCode": "Copy pairing code",
           "diagnosticsCopied": "Diagnostics copied",
-          "diagnosticsCopyFailed": "Failed to copy diagnostics"
+          "diagnosticsCopyFailed": "Failed to copy diagnostics",
+          "f7c1e2a90b": "Immediately"
         },
         "MobileSettingsPane": {
           "9a3c280e49": "GitHub Releases",

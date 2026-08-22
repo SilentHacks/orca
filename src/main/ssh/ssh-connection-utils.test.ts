@@ -505,6 +505,11 @@ describe('buildConnectConfig', () => {
     expect(config.keepaliveInterval).toBe(15_000)
   })
 
+  it('sets keepaliveCountMax to 2 so a silently dead link is detected in <=30s', () => {
+    const config = buildConnectConfig(makeTarget(), null)
+    expect(config.keepaliveCountMax).toBe(2)
+  })
+
   it('uses agent auth when no explicit key and SSH_AUTH_SOCK is set', () => {
     const config = buildConnectConfig(makeTarget(), null)
     expect(config.agent).toBe('/tmp/agent.sock')

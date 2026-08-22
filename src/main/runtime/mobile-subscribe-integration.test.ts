@@ -735,6 +735,34 @@ describe('mobile subscribe integration', () => {
       expect(ptySizes.get('pty-1')).toEqual({ cols: 150, rows: 40 })
     })
 
+    it('0 restores immediately on unsubscribe — no desktop banner, override cleared', async () => {
+      settingsState.mobileAutoRestoreFitMs = 0
+      const { runtime, ptySizes, notifications } = createRuntime()
+      await runtime.handleMobileSubscribe('pty-1', 'client-a', { cols: 45, rows: 20 })
+      runtime.handleMobileUnsubscribe('pty-1', 'client-a')
+
+      // setTimeout(…, 0) fires on the next macrotask, well under the 5s clamp floor.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(ptySizes.get('pty-1')).toEqual({ cols: 150, rows: 40 })
+      expect(runtime.getTerminalFitOverride('pty-1')).toBeNull()
+      expect(notifications).toContainEqual({
+        ptyId: 'pty-1',
+        mode: 'desktop-fit',
+        cols: 150,
+        rows: 40
+      })
+    })
+
+    it('0 bypasses the clamp on set; other finite values stay clamped', () => {
+      const { runtime } = createRuntime()
+      expect(runtime.setMobileAutoRestoreFitMs(0)).toBe(0)
+      expect(settingsState.mobileAutoRestoreFitMs).toBe(0)
+      expect(runtime.getMobileAutoRestoreFitMs()).toBe(0)
+
+      expect(runtime.setMobileAutoRestoreFitMs(1)).toBe(5_000)
+      expect(settingsState.mobileAutoRestoreFitMs).toBe(5_000)
+    })
+
     it('re-subscribe before timer fires cancels pending restore', async () => {
       settingsState.mobileAutoRestoreFitMs = 60_000
       const { runtime, ptySizes } = createRuntime()
