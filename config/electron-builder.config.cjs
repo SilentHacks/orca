@@ -618,7 +618,12 @@ async function signMacStandaloneHelper(helperPath, helperName, packager) {
     isMacRelease && process.env.CSC_LINK && packager?.codeSigningInfo?.value
       ? await packager.codeSigningInfo.value
       : null
+  // Why: same precedence as the computer-use helper above — an explicit
+  // ORCA_COMPUTER_MACOS_SIGN_IDENTITY (e.g. a SHA-1 hash) wins, because
+  // keychains can hold duplicate-named certs that make name-based codesign
+  // fail as ambiguous.
   const identity =
+    process.env.ORCA_COMPUTER_MACOS_SIGN_IDENTITY ??
     process.env.CSC_NAME ??
     findInstalledMacSigningIdentity(codeSigningInfo?.keychainFile) ??
     (isMacRelease ? null : '-')
