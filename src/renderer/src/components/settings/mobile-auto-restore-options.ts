@@ -12,6 +12,13 @@ export const AUTO_RESTORE_FIT_OPTIONS: { value: string; label: string; ms: numbe
     ms: null
   },
   {
+    value: 'immediate',
+    get label() {
+      return translate('auto.components.settings.MobilePane.f7c1e2a90b', 'Immediately')
+    },
+    ms: 0
+  },
+  {
     value: '60s',
     get label() {
       return translate('auto.components.settings.MobilePane.c474aa09d8', 'After 1 minute')

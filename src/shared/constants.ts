@@ -353,8 +353,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     mobileEmulatorEnabled: true,
     mobileEmulatorDefaultDeviceUdid: null,
     androidSdkPath: null,
-    // Why: indefinite hold — the "Restore" banner is the explicit return action, no wall-clock guess. See docs/mobile-fit-hold.md.
-    mobileAutoRestoreFitMs: null,
+    // Why: immediate restore — the desktop never surfaces the "phone left this at phone size" banner. `null` re-enables the indefinite hold. See docs/mobile-fit-hold.md.
+    mobileAutoRestoreFitMs: 0,
     // Why: Anywhere (Relay + local) is the default; local-only is written only on explicit same-network choice.
     mobilePairingConnectionMode: 'automatic',
     mobilePairingCustomAddress: null,

@@ -16041,9 +16041,9 @@ export class OrcaRuntimeService {
   }
 
   // Why: read-side clamp for mobileAutoRestoreFitMs. `null` means
-  // indefinite hold (no auto-restore timer). A finite value is clamped
-  // to [MIN, MAX] to defend against bad config — the smallest useful
-  // value is a few seconds, the largest is one hour. See
+  // indefinite hold (no auto-restore timer). `0` means immediate restore
+  // (no desktop banner) and bypasses the clamp; other finite values are
+  // clamped to [MIN, MAX] to defend against bad config. See
   // docs/mobile-fit-hold.md.
   private getAutoRestoreFitMs(): number | null {
     const raw = this.store?.getSettings().mobileAutoRestoreFitMs ?? null
@@ -16052,6 +16052,9 @@ export class OrcaRuntimeService {
     }
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
       return null
+    }
+    if (raw === 0) {
+      return 0
     }
     return Math.min(Math.max(raw, MOBILE_AUTO_RESTORE_FIT_MIN_MS), MOBILE_AUTO_RESTORE_FIT_MAX_MS)
   }
@@ -16091,6 +16094,8 @@ export class OrcaRuntimeService {
       normalized = null
     } else if (typeof ms !== 'number' || !Number.isFinite(ms)) {
       normalized = null
+    } else if (ms === 0) {
+      normalized = 0
     } else {
       normalized = Math.min(
         Math.max(ms, MOBILE_AUTO_RESTORE_FIT_MIN_MS),
@@ -16735,10 +16740,11 @@ export class OrcaRuntimeService {
         this.pendingRestoreTimers.delete(ptyId)
       }
       // Why: scheduling is conditional on the user's mobileAutoRestoreFitMs
-      // preference. `null` (default, "Indefinite") leaves the PTY at phone
-      // dims until the user clicks Restore on the desktop banner — the
-      // central UX promise of docs/mobile-fit-hold.md. A finite value runs
-      // the restore that long after the last unsubscribe.
+      // preference. `null` ("Indefinite") leaves the PTY at phone dims until
+      // the user clicks Restore on the desktop banner — the central UX
+      // promise of docs/mobile-fit-hold.md. `0` restores on the next
+      // macrotask; other finite values run the restore that long after the
+      // last unsubscribe.
       const autoRestoreMs = this.getAutoRestoreFitMs()
       if (autoRestoreMs == null) {
         // Indefinite hold: the fit override persists, the SOFT_LEAVE_GRACE
@@ -39920,7 +39926,7 @@ const CLAUDE_IDLE_PREFIX = '\u2733'
 const GEMINI_IDLE_PREFIX = '\u25c7'
 const PI_IDLE_PREFIX = '\u03c0 - '
 
-// Clamp for mobileAutoRestoreFitMs: floor above the legacy 300ms debounce, 1h ceiling (a held PTY beyond that is "I forgot", not intentional).
+// Clamp for mobileAutoRestoreFitMs: floor above the legacy 300ms debounce, 1h ceiling (a held PTY beyond that is "I forgot", not intentional). `0` bypasses the clamp — immediate restore.
 const MOBILE_AUTO_RESTORE_FIT_MIN_MS = 5_000
 const MOBILE_AUTO_RESTORE_FIT_MAX_MS = 60 * 60 * 1000
 

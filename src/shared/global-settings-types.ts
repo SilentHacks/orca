@@ -393,8 +393,9 @@ export type GlobalSettings = {
   /** Explicit Android SDK root for when auto-discovery (ANDROID_HOME / default path) fails; null (default) auto-discovers. */
   androidSdkPath?: string | null
   /** Auto-restore window (ms) for a phone-fit PTY after the last mobile subscriber leaves.
-   *  `null` (default) holds phone size indefinitely; a finite value schedules restore.
-   *  Clamped on read to [5_000ms, 60min]. See docs/mobile-fit-hold.md. */
+   *  `null` holds phone size indefinitely; `0` restores immediately (no desktop banner);
+   *  other finite values schedule a restore, clamped on read to [5_000ms, 60min].
+   *  See docs/mobile-fit-hold.md. */
   mobileAutoRestoreFitMs: number | null
   /** Preferred mobile pairing path for new QR codes. Missing/'automatic' = Anywhere (Relay + local);
    *  explicit 'local-only' = same-network only. */
