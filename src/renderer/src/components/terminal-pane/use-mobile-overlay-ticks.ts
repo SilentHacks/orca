@@ -4,6 +4,7 @@ import { onOverrideChange } from '@/lib/pane-manager/mobile-fit-overrides'
 import type { ManagedPane, PaneManager } from '@/lib/pane-manager/pane-manager'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
 import { applyDesktopFitFallbackAfterReplay } from './desktop-fit-fallback'
+import { schedulePostRestoreFitSettle } from './post-restore-fit-settle'
 import { getOverrideAffectedPanes, getPanesNeedingOverrideFit } from './override-affected-panes'
 import type { PtyTransport } from './pty-transport'
 
@@ -106,6 +107,15 @@ export function useMobileOverlayTicks({ managerRef, paneTransportsRef }: MobileO
           }
         }
         scheduleFitFrame(fitAffectedPanes)
+        // Why: the rAF fit can land on a still-settling-metrics grid (smaller than
+        // the container); poll briefly for the settled grid like the reveal heal.
+        scheduleFallbackTimer(() => {
+          for (const pane of getAffectedPanes()) {
+            schedulePostRestoreFitSettle(pane, {
+              isCurrent: () => getAffectedPanes().includes(pane)
+            })
+          }
+        })
         // Why: direct-resize fallback if safeFit no-op'd, only while xterm is still at the prior mobile-fit dims; else event.cols/rows is a stale baseline that clobbers the fit.
         scheduleFallbackTimer(() => {
           for (const pane of getAffectedPanes()) {

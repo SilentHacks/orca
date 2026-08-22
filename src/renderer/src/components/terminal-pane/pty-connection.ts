@@ -11,6 +11,7 @@ import { resolvePaneTitleDecision } from './terminal-title-evidence'
 import { blocksCodexPaneInput } from '../codex-restart-notice-state'
 import { resolveLiveAgentStatusConnectionRouting } from '@/lib/agent-status-connection-ownership'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
+import { schedulePostRestoreFitSettle } from './post-restore-fit-settle'
 import { useAppStore } from '@/store'
 import { getWorktreeMapFromState } from '@/store/selectors'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
@@ -8673,6 +8674,22 @@ export function connectPanePty(
               pendingReattachFit = null
             }
           }
+          // Why: the one-shot fit can land on a still-settling-metrics grid (smaller
+          // than the container) with no pixel change afterwards to retrigger a fit;
+          // poll briefly for the settled grid like the reveal heal does.
+          schedulePostRestoreFitSettle(pane, {
+            isCurrent: () =>
+              !disposed &&
+              attemptGeneration === transportStreamGeneration &&
+              transport.getPtyId() === reattachPtyId &&
+              deps.isVisibleRef.current &&
+              !shouldSuppressDesktopPtyResize(),
+            onSettled: () => {
+              if (deps.isVisibleRef.current) {
+                ptySizeReassertion.request({ fit: false })
+              }
+            }
+          })
         } else if (isCurrentReattachPayload() && !isRemoteRuntimePtyId(reattachPtyId)) {
           window.api.pty.signal(reattachPtyId, 'SIGWINCH')
         }
