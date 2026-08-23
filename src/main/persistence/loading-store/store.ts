@@ -207,6 +207,7 @@ import {
 } from '../tracking-repos/worktree-metadata-normalization'
 import {
   migrateAgentYoloDefaults,
+  migrateMobileAutoRestoreFitImmediateDefault,
   migrateTerminalScrollbackRows,
   migrateTerminalTuiScrollSensitivityDefault,
   stripRetiredGlobalSettings
@@ -918,6 +919,12 @@ export class Store {
         if (migratedTerminalTuiScrollSensitivity.needsSave) {
           this.loadNeedsSave = true
         }
+        const migratedMobileAutoRestoreFit = migrateMobileAutoRestoreFitImmediateDefault(
+          parsed.settings
+        )
+        if (migratedMobileAutoRestoreFit.needsSave) {
+          this.loadNeedsSave = true
+        }
         const rawSourceControlAi = parsed.settings?.sourceControlAi
         const rawSourceControlAiMissing = rawSourceControlAi === undefined
         const rawSourceControlAiActionsMissing =
@@ -1231,6 +1238,7 @@ export class Store {
                 : defaults.settings.terminalRightClickToPaste,
             terminalRightClickToPasteDefaultedForPlatform: true,
             ...migratedTerminalTuiScrollSensitivity.settings,
+            ...migratedMobileAutoRestoreFit.settings,
             experimentalActivity: migratedExperimentalActivity,
             experimentalActivityDefaultedOffForAllUsers: true,
             // Why: compact worktree cards graduated from Experimental; preserve the old opt-in for rollout-era profiles.

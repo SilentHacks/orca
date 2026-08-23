@@ -397,6 +397,10 @@ export type GlobalSettings = {
    *  other finite values schedule a restore, clamped on read to [5_000ms, 60min].
    *  See docs/mobile-fit-hold.md. */
   mobileAutoRestoreFitMs: number | null
+  /** One-shot migration guard: the legacy `null` default was persisted for every profile;
+   *  stamped `true` after the first flip to the immediate default so later Indefinite
+   *  opt-outs survive reloads. */
+  mobileAutoRestoreFitDefaultedToImmediate?: boolean
   /** Preferred mobile pairing path for new QR codes. Missing/'automatic' = Anywhere (Relay + local);
    *  explicit 'local-only' = same-network only. */
   mobilePairingConnectionMode?: 'automatic' | 'local-only'

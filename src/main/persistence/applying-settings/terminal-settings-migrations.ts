@@ -114,6 +114,27 @@ export function migrateTerminalTuiScrollSensitivityDefault(settings: GlobalSetti
   }
 }
 
+export function migrateMobileAutoRestoreFitImmediateDefault(settings: GlobalSettings | undefined): {
+  settings: Pick<
+    GlobalSettings,
+    'mobileAutoRestoreFitMs' | 'mobileAutoRestoreFitDefaultedToImmediate'
+  >
+  needsSave: boolean
+} {
+  const alreadyDefaulted = settings?.mobileAutoRestoreFitDefaultedToImmediate === true
+  const current = settings?.mobileAutoRestoreFitMs
+  return {
+    // Why: the legacy default `null` (hold until the desktop Restore click) was persisted
+    // whole-object, indistinguishable from a deliberate Indefinite choice; flip unmigrated
+    // profiles once to the immediate-restore default. The guard keeps later opt-outs.
+    settings: {
+      mobileAutoRestoreFitMs: alreadyDefaulted ? (current ?? null) : current == null ? 0 : current,
+      mobileAutoRestoreFitDefaultedToImmediate: true
+    },
+    needsSave: !alreadyDefaulted
+  }
+}
+
 export function getWorkspaceLayoutHistoryKey(layout: OrcaWorkspaceLayout): string {
   return `${normalizeRuntimePathForComparison(layout.path)}:${layout.nestWorkspaces}`
 }
