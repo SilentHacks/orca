@@ -14,6 +14,7 @@ import {
 import { useRadixBodyPointerEventsRecovery } from '../hooks/useRadixBodyPointerEventsRecovery'
 import { useGitStatusPolling } from '../components/right-sidebar/useGitStatusPolling'
 import { useOsc52ClipboardDefaultOnNotice } from '../components/terminal-pane/osc52-clipboard-default-on-notice'
+import { useDesktopPresenceAutoRestore } from '../components/terminal-pane/desktop-presence-auto-restore'
 import { useWebSessionTabsSync } from '../runtime/web-session-tabs-sync'
 import { useRemoteRuntimeRecoveryTriggers } from '../runtime/use-remote-runtime-recovery-triggers'
 
@@ -33,6 +34,8 @@ export function useAppShellServices(): void {
   useWebSessionTabsSync()
   // Subscribe to IPC push events
   useIpcEvents()
+  // Why: app-level (not per-pane) so held phone-fit overrides restore even when no terminal tab is mounted.
+  useDesktopPresenceAutoRestore()
   useRemoteRuntimeRecoveryTriggers()
   useAutomationDispatchEvents()
   // Why: git polling lives at App level (RightSidebar unmounts when closed, stranding stale Rebasing/Merging badges); gate on workspaceSessionReady so it doesn't compete with first paint.
