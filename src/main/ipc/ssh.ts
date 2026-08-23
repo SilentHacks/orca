@@ -37,6 +37,7 @@ import { isSshPtyNotFoundError } from '../providers/ssh-pty-errors'
 import { toAppSshPtyId, toRelaySshPtyId } from '../providers/ssh-pty-id'
 import { registerSshBrowseHandler } from './ssh-browse'
 import { resolveResumeReconnectAction } from './ssh-resume-reconnect-policy'
+import { selectStartupPreConnectTargetIds } from './ssh-startup-pre-connect'
 import {
   getConnectionIdsForWorktree,
   enrichSshDetectedPorts,
@@ -109,6 +110,49 @@ export async function connectRegisteredSshTarget(targetId: string): Promise<SshC
     throw new Error('ssh_handlers_not_registered')
   }
   return registeredConnectSshTarget(targetId)
+}
+
+let sshStartupPreConnectDone = false
+
+/**
+ * Reconnect the SSH targets that were live at shutdown right at main boot, in
+ * parallel with the renderer's startup hydration. Later ssh:connect IPC calls
+ * join the in-flight attempt (connectInFlight), so the renderer's restore path
+ * is unchanged — it just usually finds the transport already connected.
+ */
+export function preConnectSshTargetsFromPersistedSession(): void {
+  if (sshStartupPreConnectDone) {
+    return
+  }
+  sshStartupPreConnectDone = true
+  // Why: e2e scenarios assert no local SSH connect happens on these paths.
+  if (process.env.ORCA_E2E_FORBID_LOCAL_SSH_CONNECT_PROBE) {
+    return
+  }
+  if (!persistedStore || !sshStore || !registeredConnectSshTarget) {
+    return
+  }
+  const store = persistedStore
+  const connectionIdsAtShutdown = [
+    ...(store.getWorkspaceSession().activeConnectionIdsAtShutdown ?? []),
+    ...store
+      .getWorkspaceSessionHostIds()
+      .flatMap((hostId) => store.getWorkspaceSession(hostId).activeConnectionIdsAtShutdown ?? [])
+  ]
+  const targets = new Map(sshStore.listTargets().map((target) => [target.id, target]))
+  for (const targetId of selectStartupPreConnectTargetIds({
+    connectionIdsAtShutdown,
+    targets
+  })) {
+    console.log(`[ssh] Startup pre-connect: ${targetId}`)
+    void connectRegisteredSshTarget(targetId).catch((error) => {
+      console.warn(
+        `[ssh] Startup pre-connect failed for ${targetId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
+  }
 }
 
 export function getRegisteredSshState(targetId: string): SshConnectionState | undefined {

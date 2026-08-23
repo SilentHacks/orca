@@ -25,7 +25,7 @@ import {
   type PrepareCodexSessionResume
 } from '../ipc/pty'
 import { registerDaemonManagementHandlers } from '../ipc/pty-management'
-import { registerSshHandlers } from '../ipc/ssh'
+import { preConnectSshTargetsFromPersistedSession, registerSshHandlers } from '../ipc/ssh'
 import { registerRemoteWorkspaceHandlers } from '../ipc/remote-workspace'
 import { browserManager } from '../browser/browser-manager'
 import { hasSystemMediaAccess, requestSystemMediaAccess } from '../browser/browser-media-access'
@@ -157,6 +157,9 @@ export function attachMainWindowServices(
       })
   }
   registerSshHandlers(store, () => mainWindow, runtime)
+  // Why: start reconnecting last-session SSH targets now, overlapping the renderer's
+  // startup hydration; the renderer's later ssh:connect joins the in-flight attempt.
+  preConnectSshTargetsFromPersistedSession()
   registerRemoteWorkspaceHandlers(store, () => mainWindow)
   registerFileDropRelay(mainWindow)
   registerTccPromptNoticeHandlers(mainWindow)

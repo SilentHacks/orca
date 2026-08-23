@@ -170,7 +170,11 @@ function createMainWindow(
 function createStore(): Store & { flushPendingAsync: MockFn } {
   return {
     getProfileStorageDirectory: vi.fn(() => '/profile-a'),
-    flushPendingAsync: vi.fn(() => Promise.resolve())
+    flushPendingAsync: vi.fn(() => Promise.resolve()),
+    // Why: ssh startup pre-connect reads the persisted session partitions; empty defaults keep it a no-op in tests.
+    getWorkspaceSession: vi.fn(() => ({ activeConnectionIdsAtShutdown: [] })),
+    getWorkspaceSessionHostIds: vi.fn(() => []),
+    getSshTargets: vi.fn(() => [])
   } as unknown as Store & { flushPendingAsync: MockFn }
 }
 
