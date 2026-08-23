@@ -31,6 +31,9 @@ const isWinHourly = process.env.ORCA_WIN_HOURLY === '1'
 const isWinDaily = process.env.ORCA_WIN_DAILY === '1'
 const isWinAdhoc = process.env.ORCA_WIN_ADHOC === '1'
 const isWinDevChannel = isWinHourly || isWinDaily || isWinAdhoc
+// Why: local Apple Silicon builds skip the x64 slice; ORCA_MAC_ARCHS=arm64
+// halves build time and disk. Unset keeps the dual-arch release default.
+const macArchs = process.env.ORCA_MAC_ARCHS?.split(',').map((a) => a.trim()) ?? ['x64', 'arm64']
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1' || isMacHourly || isMacDaily || isMacAdhoc
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
 const localBuildVersion =
@@ -440,11 +443,11 @@ module.exports = {
     target: [
       {
         target: 'dmg',
-        arch: ['x64', 'arm64']
+        arch: macArchs
       },
       {
         target: 'zip',
-        arch: ['x64', 'arm64']
+        arch: macArchs
       }
     ]
   },
