@@ -45,13 +45,14 @@ export function schedulePostRestoreFitSettle(
     }
   }
   const cancel = (): void => {
+    // Why bare globals: some test harnesses stub `window` without timer fns.
     for (const id of timers) {
-      window.clearTimeout(id)
+      clearTimeout(id)
     }
     timers.clear()
   }
   for (const delay of POST_RESTORE_SETTLE_CHECK_DELAYS_MS) {
-    const id = window.setTimeout(() => {
+    const id = setTimeout(() => {
       timers.delete(id)
       check()
     }, delay)
