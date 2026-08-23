@@ -1,3 +1,12 @@
+> **Personal fork of [stablyai/orca](https://github.com/stablyai/orca)** — SSH-first tweaks, not affiliated with Stably AI.
+>
+> - No "restore all terminals?" prompt after a mobile session — auto-restores immediately
+> - Terminal self-heals to full size after reattach instead of staying phone-sized
+> - Near-instant reconnect after MacBook sleep and app restart
+> - Personal Apple Silicon builds: `pnpm run build:mac:arm64` (no release artifacts here)
+>
+> Everything below describes upstream Orca; download links point there.
+
 <h1 align="center">
   <a href="https://onOrca.dev"><img src="resources/build/icon.png" alt="Orca" width="64" valign="middle" /></a> Orca
 </h1>
