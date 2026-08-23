@@ -362,6 +362,7 @@ async function deployAndLaunchRelayAttempt(
   relayInstanceId?: string,
   deploySignal?: AbortSignal
 ): Promise<RelayDeployResult> {
+  const attemptStartedAt = Date.now()
   // Why: the socket path is deterministic per target, so a warm restart can skip
   // the whole bootstrap probe sequence (platform/home/install/node/locks) and go
   // straight to the socket probe + --connect. Any miss falls through to the full path.
@@ -369,7 +370,9 @@ async function deployAndLaunchRelayAttempt(
     const cached = readCachedRelayBootstrap(relayInstanceId)
     const fastResult = cached ? await tryCachedAliveRelayConnect(conn, cached, deploySignal) : null
     if (fastResult) {
-      console.log('[ssh-relay] Reconnected to existing relay via cached bootstrap')
+      console.log(
+        `[ssh-relay] Reconnected to existing relay via cached bootstrap in ${Date.now() - attemptStartedAt}ms`
+      )
       return fastResult
     }
   }
@@ -400,6 +403,7 @@ async function deployAndLaunchRelayAttempt(
     await resolveRelayBootstrapState(conn, hostPlatform, fullVersion, deploySignal)
   console.log(`[ssh-relay] Remote dir: ${remoteRelayDir}`)
   console.log(`[ssh-relay] Already installed at ${fullVersion}: ${alreadyInstalled}`)
+  console.log(`[ssh-relay] Bootstrap probes resolved in ${Date.now() - attemptStartedAt}ms`)
 
   // Why: derive the home-relative suffix once — recomputing it by stripping the shell home breaks on a split namespace.
   const homeRelativeRelayDir = relayHomeRelativeDir(fullVersion)
@@ -620,6 +624,7 @@ async function deployAndLaunchRelayAttempt(
     })
   }
 
+  console.log(`[ssh-relay] Deploy complete in ${Date.now() - attemptStartedAt}ms`)
   return {
     transport: launched.transport,
     serverBuildId: fullVersion,

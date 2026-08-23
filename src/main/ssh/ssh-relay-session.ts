@@ -311,6 +311,7 @@ export class SshRelaySession {
   private _onTerminalRelayError: ((targetId: string, err: Error) => void) | null = null
   private _onReady: ((targetId: string) => void) | null = null
   private _onProvidersReady: ((targetId: string) => void) | null = null
+  private establishStartedAt: number | null = null
   private portScanner: PortScanner | null = null
   private currentConnection: SshConnection | null = null
   private hostPlatform: RemoteHostPlatform | null = null
@@ -512,6 +513,7 @@ export class SshRelaySession {
       throw new Error(`Cannot establish relay session in state: ${this._state}`)
     }
     this._state = 'deploying'
+    this.establishStartedAt = Date.now()
     this.aiVaultListMethodSupported = null
     this.aiVaultTitleMethodSupported = null
     this.currentConnection = conn
@@ -613,6 +615,9 @@ export class SshRelaySession {
       this.watchMuxForRelayLoss(mux)
       verifyRelayAttempt(mux, isAttemptCurrent, 'establish')
       this._state = 'ready'
+      console.log(
+        `[ssh-relay-session] Relay session ready for ${this.targetId} in ${this.establishStartedAt === null ? '?' : Date.now() - this.establishStartedAt}ms`
+      )
       this.startPortScanning()
       this._onReady?.(this.targetId)
     } catch (err) {
@@ -652,6 +657,7 @@ export class SshRelaySession {
     this.abortController = abortController
 
     this._state = 'reconnecting'
+    this.establishStartedAt = Date.now()
     this.aiVaultListMethodSupported = null
     this.aiVaultTitleMethodSupported = null
     this.currentConnection = conn
@@ -768,6 +774,9 @@ export class SshRelaySession {
       this.watchMuxForRelayLoss(mux)
       verifyRelayAttempt(mux, isAttemptCurrent, 'reconnect')
       this._state = 'ready'
+      console.log(
+        `[ssh-relay-session] Relay session ready for ${this.targetId} in ${this.establishStartedAt === null ? '?' : Date.now() - this.establishStartedAt}ms`
+      )
       this.startPortScanning()
       this._onReady?.(this.targetId)
     } catch (err) {
@@ -1105,6 +1114,11 @@ export class SshRelaySession {
 
     // Why: providers are live and panes attach per-PTY on demand — announce before the
     // roots round trip and the bulk reattach so the renderer goes live several RTTs early.
+    if (this.establishStartedAt !== null) {
+      console.log(
+        `[ssh-relay-session] PTY providers ready for ${this.targetId} in ${Date.now() - this.establishStartedAt}ms`
+      )
+    }
     this._onProvidersReady?.(this.targetId)
 
     // Why: roots feed the workspace graph (one round-trip wave) — keep them on the
