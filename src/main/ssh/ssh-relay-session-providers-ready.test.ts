@@ -1,8 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD,
-  AGENT_HOOK_INSTALL_PLUGINS_METHOD
-} from '../../shared/agent-hook-relay'
 import { SshRelaySession } from './ssh-relay-session'
 import type { SshConnection } from './ssh-connection'
 import { createMockDeps, mockDeploySuccess } from './ssh-relay-session-test-fixtures'
@@ -12,11 +8,22 @@ const { muxRequestMock, openConsumerSessionMock } = vi.hoisted(() => ({
   openConsumerSessionMock: vi.fn()
 }))
 
-vi.mock('./ssh-relay-deploy', () => ({ deployAndLaunchRelay: vi.fn() }))
-vi.mock('./ssh-relay-deploy-helpers', () => ({ execCommand: vi.fn().mockResolvedValue('') }))
+vi.mock('./ssh-relay-deploy', () => ({
+  deployAndLaunchRelay: vi.fn()
+}))
+
 vi.mock('./ssh-pty-consumer-session', () => ({
   openSshPtyConsumerSession: openConsumerSessionMock
 }))
+
+vi.mock('../ipc/ssh-pty-output-intake-registry', () => ({
+  acceptSshPtyOutputData: vi.fn().mockResolvedValue(undefined),
+  acceptSshPtyOutputExit: vi.fn().mockResolvedValue(undefined),
+  allocateSshPtyProviderGeneration: vi.fn(() => 41),
+  installSshPtySourceAckPublisher: vi.fn(() => () => {}),
+  installSshPtySourceCancellationPublisher: vi.fn(() => () => {})
+}))
+
 vi.mock('./ssh-channel-multiplexer', () => ({
   SshChannelMultiplexer: class MockSshChannelMultiplexer {
     notify = vi.fn()
@@ -30,41 +37,51 @@ vi.mock('./ssh-channel-multiplexer', () => ({
     isDisposed = vi.fn().mockReturnValue(false)
   }
 }))
+
 vi.mock('../providers/ssh-pty-provider', () => ({
-  isSshPtyNotFoundError: vi.fn(() => false),
-  isSshPtyIdentityMismatchError: vi.fn(() => false),
+  isSshPtyNotFoundError: () => false,
+  isSshPtyIdentityMismatchError: () => false,
   SshPtyProvider: class MockSshPtyProvider {
     onData = vi.fn().mockReturnValue(() => {})
     onReplay = vi.fn().mockReturnValue(() => {})
     onExit = vi.fn().mockReturnValue(() => {})
+    setPtyDeliveryPauseAdapter = vi.fn()
     dispose = vi.fn()
   }
 }))
+
 vi.mock('../providers/ssh-filesystem-provider', () => ({
   SshFilesystemProvider: class MockSshFilesystemProvider {
     dispose = vi.fn()
   }
 }))
+
 vi.mock('../providers/ssh-git-provider', () => ({
   SshGitProvider: class MockSshGitProvider {}
 }))
+
 vi.mock('../ipc/pty', () => ({
   registerSshPtyProvider: vi.fn(),
   unregisterSshPtyProvider: vi.fn(),
-  getSshPtyProvider: vi.fn(),
+  getSshPtyProvider: vi.fn().mockReturnValue({
+    dispose: vi.fn(),
+    attach: vi.fn().mockResolvedValue(undefined),
+    attachForReconnect: vi.fn().mockResolvedValue({})
+  }),
   getPtyIdsForConnection: vi.fn().mockReturnValue([]),
   clearPtyOwnershipForConnection: vi.fn(),
   clearProviderPtyState: vi.fn(),
   deletePtyOwnership: vi.fn(),
   setPtyOwnership: vi.fn(),
-  restorePtyIncarnation: vi.fn(),
   isCurrentPtyExit: vi.fn(() => true)
 }))
+
 vi.mock('../providers/ssh-filesystem-dispatch', () => ({
   registerSshFilesystemProvider: vi.fn(),
   unregisterSshFilesystemProvider: vi.fn(),
-  getSshFilesystemProvider: vi.fn()
+  getSshFilesystemProvider: vi.fn().mockReturnValue({ dispose: vi.fn() })
 }))
+
 vi.mock('../providers/ssh-git-dispatch', () => ({
   registerSshGitProvider: vi.fn(),
   unregisterSshGitProvider: vi.fn()
@@ -72,62 +89,47 @@ vi.mock('../providers/ssh-git-dispatch', () => ({
 
 const { registerSshPtyProvider } = await import('../ipc/pty')
 
-describe('SshRelaySession managed hooks', () => {
+describe('SshRelaySession providers-ready', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.ORCA_FEATURE_REMOTE_AGENT_HOOKS = '1'
     openConsumerSessionMock.mockImplementation(async (_mux, options) => ({
       mode: 'legacy-fallback',
       clientInstanceId: options.clientInstanceId,
       serverBuildId: 'test-relay-build'
     }))
+    muxRequestMock.mockReset().mockResolvedValue([])
     mockDeploySuccess()
   })
 
-  it('installs only detected hooks without blocking provider registration', async () => {
+  it('announces providers before the workspace-graph round trip blocks establish', async () => {
+    // Why: hold the git.listWorktrees wave (registerRelayRoots) forever — providers-ready
+    // must have fired by then, because PTY attach never queues behind the graph.
+    let releaseGraph!: () => void
+    const graphGate = new Promise<void>((resolve) => {
+      releaseGraph = resolve
+    })
     muxRequestMock.mockImplementation(async (method: string) => {
-      if (method === 'preflight.detectAgents') {
-        return { agents: ['codex'] }
+      if (method === 'git.listWorktrees') {
+        await graphGate
+        return []
       }
-      return method === AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD
-        ? { installers: 1, errors: 0 }
-        : { ok: true }
+      return { ok: true }
     })
-    const { mockStore, mockPortForward, getMainWindow } = createMockDeps()
-    const sftp = vi.fn()
-    const connection = {
-      sftp,
-      getHostKeyFingerprint: vi.fn(() => 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
-    } as unknown as SshConnection
+
+    const { mockConn, mockStore, mockPortForward, getMainWindow } = createMockDeps()
     const session = new SshRelaySession('target-1', getMainWindow, mockStore, mockPortForward)
+    const providersReady = vi.fn()
+    session.setOnProvidersReady(providersReady)
 
-    await session.establish(connection)
-    await vi.waitFor(() =>
-      expect(muxRequestMock).toHaveBeenCalledWith(AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD, {
-        hostKeyFingerprint: 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-        agents: ['codex']
-      })
-    )
+    const establish = session.establish(mockConn as SshConnection)
+    await vi.waitFor(() => expect(providersReady).toHaveBeenCalledWith('target-1'))
+    expect(registerSshPtyProvider).toHaveBeenCalledWith('target-1', expect.anything())
+    await Promise.resolve()
 
-    const managedIndex = muxRequestMock.mock.calls.findIndex(
-      ([method]) => method === AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD
-    )
-    const pluginsIndex = muxRequestMock.mock.calls.findIndex(
-      ([method]) => method === AGENT_HOOK_INSTALL_PLUGINS_METHOD
-    )
-    expect(muxRequestMock.mock.calls[pluginsIndex]?.[1]).toMatchObject({
-      piExtensionSource: expect.stringContaining('/hook/pi'),
-      ompExtensionSource: expect.stringContaining('/hook/omp'),
-      primeAgentExtensionSource: expect.stringContaining('/hook/prime-agent')
-    })
-    expect(sftp).not.toHaveBeenCalled()
-    // Why: providers register before any remote busywork so pane attach never queues
-    // behind plugin upload; the plugin sync runs in the background.
-    expect(vi.mocked(registerSshPtyProvider).mock.invocationCallOrder[0]).toBeLessThan(
-      muxRequestMock.mock.invocationCallOrder[pluginsIndex]
-    )
-    expect(vi.mocked(registerSshPtyProvider).mock.invocationCallOrder[0]).toBeLessThan(
-      muxRequestMock.mock.invocationCallOrder[managedIndex]
-    )
+    releaseGraph()
+    await expect(establish).resolves.toBeUndefined()
+    expect(session.getState()).toBe('ready')
+    // Exactly one announcement per establish, not one per provider.
+    expect(providersReady).toHaveBeenCalledTimes(1)
   })
 })

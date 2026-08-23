@@ -298,14 +298,12 @@ describe('SshRelaySession', () => {
     ).toBe(true)
   })
 
-  it('does not register providers if dispose wins during initial plugin sync', async () => {
+  it('resolves establish without waiting on the backgrounded plugin sync', async () => {
     process.env.ORCA_FEATURE_REMOTE_AGENT_HOOKS = '1'
-    let resolvePluginInstall!: () => void
     muxRequestMock.mockImplementation(async (method: string) => {
       if (method === AGENT_HOOK_INSTALL_PLUGINS_METHOD) {
-        return new Promise((resolve) => {
-          resolvePluginInstall = () => resolve({ ok: true })
-        })
+        // Never settles — the plugin sync must not sit on establish's await chain.
+        return new Promise(() => {})
       }
       return { ok: true }
     })
@@ -313,20 +311,11 @@ describe('SshRelaySession', () => {
     const mockConn = {} as SshConnection
     const session = new SshRelaySession('target-1', getMainWindow, mockStore, mockPortForward)
 
-    const establish = session.establish(mockConn)
-    await vi.waitFor(() =>
-      expect(muxRequestMock).toHaveBeenCalledWith(
-        AGENT_HOOK_INSTALL_PLUGINS_METHOD,
-        expect.anything()
-      )
-    )
-    session.dispose()
-    resolvePluginInstall()
-
-    await expect(establish).rejects.toThrow('Session disposed during establish')
-    expect(registerSshPtyProvider).not.toHaveBeenCalled()
-    expect(registerSshFilesystemProvider).not.toHaveBeenCalled()
-    expect(registerSshGitProvider).not.toHaveBeenCalled()
+    await expect(session.establish(mockConn)).resolves.toBeUndefined()
+    expect(registerSshPtyProvider).toHaveBeenCalled()
+    expect(registerSshFilesystemProvider).toHaveBeenCalled()
+    expect(registerSshGitProvider).toHaveBeenCalled()
+    expect(session.getState()).toBe('ready')
   })
 
   it('rejects establish when not idle', async () => {

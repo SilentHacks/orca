@@ -838,6 +838,24 @@ function broadcastDetectedPortsFromCurrentWindow(
 }
 
 function configureRelaySessionCallbacks(session: SshRelaySession): void {
+  // Why: providers register before roots/plugin/CLI busywork and the bulk PTY reattach;
+  // panes attach per-PTY on demand, so broadcasting 'connected' here lets the renderer
+  // go live several round trips before the full establish finishes. The final broadcast
+  // after establish is a no-op for the renderer (no disconnected→connected transition).
+  session.setOnProvidersReady((tid) => {
+    if (activeSessions.get(tid) !== session) {
+      return
+    }
+    const conn = connectionManager?.getConnection(tid)
+    broadcastSshState(getCurrentMainWindow, tid, {
+      targetId: tid,
+      status: 'connected',
+      error: null,
+      reconnectAttempt: 0,
+      supportsFolderDownload: conn?.usesSystemSshTransport?.() !== true
+    })
+  })
+
   session.setOnTerminalRelayError((tid, err) => {
     clearRelayLostBackoff(tid)
     if (activeSessions.get(tid)?.getState() !== 'deploying') {

@@ -310,6 +310,7 @@ export class SshRelaySession {
   // from _onRelayLost (which expects a recoverable transport drop).
   private _onTerminalRelayError: ((targetId: string, err: Error) => void) | null = null
   private _onReady: ((targetId: string) => void) | null = null
+  private _onProvidersReady: ((targetId: string) => void) | null = null
   private portScanner: PortScanner | null = null
   private currentConnection: SshConnection | null = null
   private hostPlatform: RemoteHostPlatform | null = null
@@ -396,6 +397,10 @@ export class SshRelaySession {
 
   setOnReady(cb: (targetId: string) => void): void {
     this._onReady = cb
+  }
+
+  setOnProvidersReady(cb: (targetId: string) => void): void {
+    this._onProvidersReady = cb
   }
 
   getState(): RelaySessionState {
@@ -982,30 +987,8 @@ export class SshRelaySession {
     shouldContinue: (() => boolean) | undefined,
     connectionIncarnation: string
   ): Promise<boolean> {
-    await this.registerRelayRoots(mux)
-    if (shouldContinue && !shouldContinue()) {
-      return false
-    }
-
-    await this.installPluginsOnRelay(mux)
-    if (shouldContinue && !shouldContinue()) {
-      return false
-    }
-
-    try {
-      await this.installRemoteOrcaCliLauncher()
-    } catch (error) {
-      // Why: on MaxSessions=1 remotes the relay holds the only slot, so this raw-connection install can fail — don't fail the whole connection.
-      console.warn(
-        `[ssh-relay-session] remote orca CLI launcher install failed for ${this.targetId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
-    if (shouldContinue && !shouldContinue()) {
-      return false
-    }
-
+    // Why: providers first — registration is local and instant, and panes can attach
+    // PTYs the moment it lands; nothing below it is required for PTY I/O.
     this.wireUpRemoteOrcaCli(mux, connectionIncarnation)
 
     const providerGeneration = allocateSshPtyProviderGeneration()
@@ -1119,6 +1102,36 @@ export class SshRelaySession {
     this.wireUpAgentHookEvents(mux)
     this.wireUpRemoteWorkspaceEvents(mux)
     void this.installManagedHooksOnRemote(mux, shouldContinue)
+
+    // Why: providers are live and panes attach per-PTY on demand — announce before the
+    // roots round trip and the bulk reattach so the renderer goes live several RTTs early.
+    this._onProvidersReady?.(this.targetId)
+
+    // Why: roots feed the workspace graph (one round-trip wave) — keep them on the
+    // critical path, but after providers so pane attach never queues behind them.
+    await this.registerRelayRoots(mux)
+    if (shouldContinue && !shouldContinue()) {
+      return false
+    }
+
+    // Why: plugin upload and the remote CLI launcher are multi-round-trip busywork
+    // no PTY depends on — run them off the connect critical path. A stale attempt
+    // fails against the disposed mux and lands in the warn below.
+    void this.installPluginsOnRelay(mux).catch((error) => {
+      console.warn(
+        `[ssh-relay-session] relay plugin install failed for ${this.targetId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
+    void this.installRemoteOrcaCliLauncher().catch((error) => {
+      // Why: on MaxSessions=1 remotes the relay holds the only slot, so this raw-connection install can fail — don't fail the whole connection.
+      console.warn(
+        `[ssh-relay-session] remote orca CLI launcher install failed for ${this.targetId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
     return true
   }
 
