@@ -24,6 +24,11 @@ import {
   type RelayUploadStageNamespace
 } from './ssh-relay-install-namespace'
 import { createRelayInstallMarkerFileName } from './ssh-relay-install-marker'
+import {
+  readCachedRelayBootstrap,
+  writeCachedRelayBootstrap,
+  type CachedRelayBootstrap
+} from './ssh-relay-bootstrap-cache'
 import { resolveRemoteNodePath } from './ssh-remote-node-resolution'
 import {
   readLocalFullVersion,
@@ -357,6 +362,17 @@ async function deployAndLaunchRelayAttempt(
   relayInstanceId?: string,
   deploySignal?: AbortSignal
 ): Promise<RelayDeployResult> {
+  // Why: the socket path is deterministic per target, so a warm restart can skip
+  // the whole bootstrap probe sequence (platform/home/install/node/locks) and go
+  // straight to the socket probe + --connect. Any miss falls through to the full path.
+  if (relayInstanceId) {
+    const cached = readCachedRelayBootstrap(relayInstanceId)
+    const fastResult = cached ? await tryCachedAliveRelayConnect(conn, cached, deploySignal) : null
+    if (fastResult) {
+      console.log('[ssh-relay] Reconnected to existing relay via cached bootstrap')
+      return fastResult
+    }
+  }
   onProgress?.('Detecting remote platform...')
   console.log('[ssh-relay] Detecting remote platform...')
   const hostPlatform = await detectRemoteHostPlatform(conn, { signal: deploySignal })
@@ -588,6 +604,21 @@ async function deployAndLaunchRelayAttempt(
       })
     )
     .catch(() => {})
+
+  // Why: remember the derived bootstrap so the next warm deploy can skip the
+  // probe sequence; Windows relays launch through a different flow, keep them on the full path.
+  if (relayInstanceId && !platform.startsWith('win32')) {
+    writeCachedRelayBootstrap(relayInstanceId, {
+      fullVersion,
+      platform,
+      remoteHome,
+      remoteRelayDir,
+      nodePath: launched.nodePath,
+      sockPath: launched.sockPath,
+      credentialFile: launched.credentialFile,
+      savedAt: Date.now()
+    })
+  }
 
   return {
     transport: launched.transport,
@@ -1350,6 +1381,58 @@ export function getLocalRelayCandidates(platform: RelayPlatform): string[] {
   )
 
   return [...new Set(candidates)]
+}
+
+// Why: warm-restart fast path — probe the cached socket and --connect directly,
+// skipping the ~10-round-trip bootstrap probe sequence. Returns null on any
+// miss (stale cache, dead socket, failed bridge) so the caller falls back to
+// the full deploy path.
+async function tryCachedAliveRelayConnect(
+  conn: SshConnection,
+  cached: CachedRelayBootstrap,
+  signal?: AbortSignal
+): Promise<RelayDeployResult | null> {
+  // Why: Windows relays use named pipes and a different launch flow; full path only.
+  if (cached.platform.startsWith('win32')) {
+    return null
+  }
+  // Why: a local app update changes the version-hashed install dir; the cached
+  // dir belongs to the old build, so re-derive everything.
+  const localRelayDir = getLocalRelayPath(cached.platform as RelayPlatform)
+  if (!localRelayDir || readLocalFullVersion(localRelayDir) !== cached.fullVersion) {
+    return null
+  }
+  try {
+    const probeOutput = await execCommand(
+      conn,
+      `test -S ${shellEscape(cached.sockPath)} && echo ALIVE || echo DEAD`,
+      { signal }
+    )
+    if (probeOutput.trim() !== 'ALIVE') {
+      return null
+    }
+    const channel = await conn.exec(
+      `cd ${shellEscape(cached.remoteRelayDir)} && ${shellEscape(cached.nodePath)} relay.js --connect --sock-path ${shellEscape(cached.sockPath)} --credential-file ${shellEscape(cached.credentialFile)}`,
+      { signal }
+    )
+    const transport = await waitForSentinel(channel, signal)
+    return {
+      transport,
+      serverBuildId: cached.fullVersion,
+      platform: cached.platform as RelayPlatform,
+      remoteHome: cached.remoteHome,
+      remoteRelayDir: cached.remoteRelayDir,
+      nodePath: cached.nodePath,
+      sockPath: cached.sockPath,
+      credentialFile: cached.credentialFile
+    }
+  } catch (err) {
+    if (isUnconfirmedSshCommandTermination(err)) {
+      throw err
+    }
+    signal?.throwIfAborted()
+    return null
+  }
 }
 
 async function launchRelay(
