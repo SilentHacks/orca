@@ -21,7 +21,7 @@ export function schedulePostRestoreFitSettle(
   pane: ManagedPane,
   deps: PostRestoreFitSettleDeps
 ): () => void {
-  const timers = new Set<number>()
+  const timers = new Set<ReturnType<typeof setTimeout>>()
   const check = (): void => {
     if (!deps.isCurrent()) {
       cancel()
