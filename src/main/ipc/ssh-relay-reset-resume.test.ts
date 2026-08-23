@@ -402,8 +402,9 @@ describe('SSH IPC handlers', () => {
     resumeListener()
 
     await vi.waitFor(() => expect(mockConnectionManager.reconnect).toHaveBeenCalledWith('ssh-1'))
-    // Why: a failed first probe gets one retry before teardown (slow post-wake network).
-    expect(mockMux.probeLiveness).toHaveBeenCalledTimes(2)
+    // Why: a single 1.5s probe classifies the link — a slow-but-alive link that misses it
+    // only pays a lossless grace-0 reconnect (#7773 retry rationale retired with the 2x5s probes).
+    expect(mockMux.probeLiveness).toHaveBeenCalledTimes(1)
     expect(handlers.get('ssh:getState')!(null, { targetId: 'ssh-1' })).toMatchObject({
       connectionGeneration: 2
     })
@@ -472,7 +473,7 @@ describe('SSH IPC handlers', () => {
     // win — reconnecting afterwards would resurrect the torn-down target.
     mockConnectionManager.getConnection.mockReturnValue(undefined)
 
-    await vi.waitFor(() => expect(mockMux.probeLiveness).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(mockMux.probeLiveness).toHaveBeenCalledTimes(1))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mockConnectionManager.reconnect).not.toHaveBeenCalled()
   })
