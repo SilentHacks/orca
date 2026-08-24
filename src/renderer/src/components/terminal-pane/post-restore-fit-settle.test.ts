@@ -71,6 +71,35 @@ describe('schedulePostRestoreFitSettle', () => {
     expect(requestStablePaneFitMock).not.toHaveBeenCalled()
   })
 
+  it('re-arms one final check after a coalesced unchanged-grid burst', () => {
+    const pane = createPane(80, 24)
+    // Whole schedule fires against one stale layout frame: every read agrees.
+    pane.fitAddon.proposeDimensions.mockReturnValue({ cols: 80, rows: 24 })
+
+    schedulePostRestoreFitSettle(pane, { isCurrent: () => true })
+
+    vi.advanceTimersByTime(800)
+    expect(requestStablePaneFitMock).not.toHaveBeenCalled()
+
+    // Layout restores late; the final check must still see the diverged grid.
+    pane.fitAddon.proposeDimensions.mockReturnValue({ cols: 120, rows: 30 })
+    vi.advanceTimersByTime(2_000)
+    expect(requestStablePaneFitMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-arm once two consecutive reads agree', () => {
+    const pane = createPane(80, 24)
+    pane.fitAddon.proposeDimensions.mockReturnValue({ cols: 80, rows: 24 })
+
+    schedulePostRestoreFitSettle(pane, { isCurrent: () => true })
+    vi.advanceTimersByTime(2_100)
+    vi.advanceTimersByTime(2_100)
+
+    // First pass arms one final check (single read); the final check's read
+    // matches the prior one, so nothing further is scheduled.
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('ignores transient measurement failures and heals on a later check', () => {
     const pane = createPane(80, 24)
     pane.fitAddon.proposeDimensions.mockReturnValueOnce(null)
