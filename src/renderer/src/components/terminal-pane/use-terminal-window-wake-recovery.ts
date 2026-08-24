@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { PaneManager } from '@/lib/pane-manager/pane-manager'
 import { recoverVisibleTerminalWindowWake } from './terminal-visibility-resume'
+import { schedulePostResumeFitSettle } from './post-resume-fit-settle'
 import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
 import type { IDisposable } from '@xterm/xterm'
 
@@ -110,6 +111,9 @@ export function useTerminalWindowWakeRecovery({
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         recoverVisibleWake(true, 'system-resumed')
       }
+      // Why: resume can land before Chromium restores the window layout, so the
+      // immediate fit reads a stale frame. One settled pass after layout catches up.
+      schedulePostResumeFitSettle(managerRef, { isVisible: () => isVisibleRef.current })
     }
     window.addEventListener('focus', onFocus)
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
