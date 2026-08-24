@@ -107,6 +107,7 @@ import {
   getFitOverrideForPty
 } from '@/lib/pane-manager/mobile-fit-overrides'
 import { shouldShowMobileDriverOverlay } from './mobile-driver-overlay-visibility'
+import { shouldSuppressHeldFitOverlay } from './desktop-presence-auto-restore'
 import { getAllDrivers, getDriverForPty, isPtyLocked } from '@/lib/pane-manager/mobile-driver-state'
 import { shouldChatTakeOverMobileSurface } from '../native-chat/native-chat-send-eligibility'
 import { canToggleNativeChat } from '../native-chat/native-chat-availability'
@@ -3262,7 +3263,10 @@ function TerminalPane(
         const driver = getDriverForPty(ptyId)
         const fitMode = getFitOverrideForPty(ptyId)?.mode ?? null
         const hasFitOverride = fitMode === 'mobile-fit'
-        if (!shouldShowMobileDriverOverlay(driver.kind, fitMode)) {
+        if (
+          !shouldShowMobileDriverOverlay(driver.kind, fitMode) ||
+          (hasFitOverride && shouldSuppressHeldFitOverlay(ptyId))
+        ) {
           return null
         }
         // Why: only the chat-replaced pane hides presence-lock/phone-fit chrome; sibling splits stay normal terminals.

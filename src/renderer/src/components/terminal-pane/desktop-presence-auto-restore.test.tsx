@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import {
   getHeldMobileFitPtyIds,
+  shouldSuppressHeldFitOverlay,
   useDesktopPresenceAutoRestore
 } from './desktop-presence-auto-restore'
 import { setDriverForPty } from '@/lib/pane-manager/mobile-driver-state'
@@ -60,8 +61,29 @@ describe('useDesktopPresenceAutoRestore', () => {
     clearMobileState()
   })
 
-  afterEach(() => {
-    clearMobileState()
+  it('suppresses the held-fit banner for the whole restore round-trip', async () => {
+    setFitOverride('pty-1', 'mobile-fit', 45, 20)
+    setDriverForPty('pty-1', { kind: 'idle' })
+
+    // Hold the restore open: suppression must cover the entire await window,
+    // not just the synchronous pre-await stretch.
+    let releaseRestore: (value: boolean) => void = () => {}
+    mockState.restoreMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        releaseRestore = resolve
+      })
+    )
+
+    const { unmount } = renderHook(() => useDesktopPresenceAutoRestore())
+    await flushFrames()
+
+    expect(shouldSuppressHeldFitOverlay('pty-1')).toBe(true)
+    releaseRestore(true)
+    // Main's desktop-fit broadcast lands after the restore settles.
+    setFitOverride('pty-1', 'desktop-fit', 0, 0)
+    await flushFrames()
+    expect(shouldSuppressHeldFitOverlay('pty-1')).toBe(false)
+    unmount()
   })
 
   it('restores a held override immediately when the preference is Immediate', async () => {

@@ -24,6 +24,15 @@ export function getHeldMobileFitPtyIds(): string[] {
   )
 }
 
+// Why: the restore is an async IPC round-trip while the banner's render
+// condition is synchronous map state — without this the held-fit overlay
+// paints for a frame or more before main's desktop-fit clear lands.
+const pendingRestorePtyIds = new Set<string>()
+
+export function shouldSuppressHeldFitOverlay(ptyId: string): boolean {
+  return pendingRestorePtyIds.has(ptyId)
+}
+
 export function useDesktopPresenceAutoRestore(): void {
   const settings = useAppStore((s) => s.settings)
   const autoRestoreMs = settings?.mobileAutoRestoreFitMs ?? null
@@ -58,10 +67,20 @@ export function useDesktopPresenceAutoRestore(): void {
         return
       }
       restoreInFlight = true
+      for (const ptyId of heldPtyIds) {
+        pendingRestorePtyIds.add(ptyId)
+      }
       try {
         await restoreTerminalFitsToDesktop(heldPtyIds, settingsRef.current ?? undefined)
       } finally {
         restoreInFlight = false
+        // Why: main's desktop-fit broadcast is what actually clears the
+        // override; only stop suppressing once each PTY is no longer held.
+        for (const ptyId of heldPtyIds) {
+          if (getFitOverrideForPty(ptyId)?.mode !== 'mobile-fit') {
+            pendingRestorePtyIds.delete(ptyId)
+          }
+        }
         // Why: a phone can re-hold a PTY mid-restore; re-check once so the
         // final state converges without waiting for another event.
         scheduleCheck()
